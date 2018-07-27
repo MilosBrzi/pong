@@ -7,7 +7,7 @@ from keras.models import Sequential
 from keras.layers import *
 from keras.optimizers import Adam
 from gym import wrappers
-from preprocessing import Preprocessor
+from pong.preprocessing import Preprocessor
 
 EPISODES = 100
 
@@ -65,7 +65,6 @@ class DQNAgent:
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
-
 def main():
     env = gym.make('Pong-v0')
 
@@ -91,25 +90,26 @@ def main():
             next_observation, reward, done, _ = env.step(action)
             next_state = preprocessor.preprocess_observation(next_observation)
             next_state = next_state.reshape(1,state_size[0], state_size[1],1)
+
             agent.remember(state, action, reward, next_state, done)
+
             state = next_state
             reward_sum += reward
 
             if done:
                 print("episode: {}/{}, score: {}, e: {:.2} history: {}"
-                      .format(e, EPISODES, reward_sum, agent.epsilon, history.history['loss']))
-
+                      .format(e, EPISODES, reward_sum, agent.epsilon))
                 break
 
-            target = reward + agent.gamma * np.amax(agent.model.predict(next_state)[0])
-            target_f = agent.model.predict(state)
-            target_f[0][action] = target
-            history = agent.model.fit(state, target_f, epochs=1, verbose=0)
+            #target = reward + agent.gamma * np.amax(agent.model.predict(next_state)[0])
+            #target_f = agent.model.predict(state)
+            #target_f[0][action] = target
+            #history = agent.model.fit(state, target_f, epochs=1, verbose=0)
 
             if agent.epsilon > agent.epsilon_min:
                 agent.epsilon *= agent.epsilon_decay
 
-            if len(agent.memory) > batch_size:
+            if len(agent.memory) == agent.memory.maxlen/2:
                 agent.replay(batch_size)
 
 
