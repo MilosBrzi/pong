@@ -6,6 +6,7 @@
 import gym
 import numpy as np
 from gym.envs.classic_control import rendering
+from PIL import Image
 
 class Preprocessor:
 
@@ -53,6 +54,10 @@ class Preprocessor:
             input_observation = np.zeros(self.preprocessed_observation_size)
 
         # store the previous frame so we can subtract from it next time
-        self.prev_processed_observations = processed_observation
+        self.prev_processed_observation = processed_observation
 
+        #data = np.zeros((80,80,3), dtype=np.uint8)
+        #data[:,:,0] = input_observation[:,:]
+        #img = Image.fromarray(data, 'RGB')
+        #img.show()
         return input_observation
