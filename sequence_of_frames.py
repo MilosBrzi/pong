@@ -15,7 +15,5 @@ class Sequence:
             self.update_sequence()
 
     def update_sequence(self):
-        for (index, frame) in enumerate(self.frames):
-            for i in range(self.w):
-                for j in range(self.h):
-                    self.sequence[i][j][index] = frame[i][j]
+        for index in range(self.size):
+            self.sequence[:, :, index] = self.frames[index]
