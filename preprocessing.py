@@ -6,6 +6,7 @@
 import gym
 import numpy as np
 from gym.envs.classic_control import rendering
+from PIL import Image
 
 class Preprocessor:
 
@@ -33,9 +34,7 @@ class Preprocessor:
     def preprocess_observation(self, input_observation):
         """ convert the 210x160x3 uint8 frame into a 6400 float vector """
 
-        viewer = rendering.SimpleImageViewer()
-
-        processed_observation = input_observation[35:195] # crop
+        processed_observation = input_observation[34:194] # crop
 
         processed_observation = self.downsample(processed_observation)
 
@@ -48,11 +47,16 @@ class Preprocessor:
 
         # subtract the previous frame from the current one so we are only processing on changes in the game
         if self.prev_processed_observation is not None:
-            input_observation = processed_observation - self.prev_processed_observation
+            input_observation = np.maximum(processed_observation, self.prev_processed_observation)
         else:
             input_observation = np.zeros(self.preprocessed_observation_size)
 
         # store the previous frame so we can subtract from it next time
-        self.prev_processed_observations = processed_observation
+        self.prev_processed_observation = processed_observation
 
+
+        #data = np.zeros((80,80,3), dtype=np.uint8)
+        #data[:,:,0] = input_observation[:,:]
+        #img = Image.fromarray(data, 'RGB')
+        #img.show()
         return input_observation
