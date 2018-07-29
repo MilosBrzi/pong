@@ -3,6 +3,7 @@ import gym
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
+import tensorflow as tf
 from collections import deque
 from keras.models import Sequential
 from keras.layers import *
@@ -23,25 +24,30 @@ class DQNAgent:
         self.epsilon = 1.0  # exploration rate
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.998
-        self.learning_rate = 0.001
+        self.learning_rate = 0.0001
         self.lastk = 4
 
-        self.exp_replay = False
-        self.batch_size = 4
+        self.exp_replay = True
+        self.batch_size = 2
         if self.exp_replay == False:
             self.memory = deque(maxlen=4)
-        else: self.memory = deque(maxlen=64)
+        else: self.memory = deque(maxlen=15000)
 
-
+        self.target_core_mode = True
+        self.q_target_freq = 1
 
         self.model_path = "models/DQN_model_e_"
         self.save_model_freq = 50
         self.log_path = "logs/dqn_log.txt"
         self.loger_mode = True
 
+        self.act_log_path = "logs/act_log.txt"
+
         self.model = self._build_model()
+        self.fixed_model = self._build_model()
 
         self.frame_sequence = Sequence(80, 80, self.lastk)
+
     def _build_model(self):
         # Neural Net for Deep-Q learning Model
         model = Sequential()
@@ -49,18 +55,29 @@ class DQNAgent:
         model.add(Conv2D(filters=32, kernel_size=(4,4), strides = 2, activation='relu'))
         model.add(Conv2D(filters=32, kernel_size=(3,3), strides = 1, activation='relu'))
         model.add(Flatten())
-        model.add(Dense(256, activation='relu'))
+        model.add(Dense(512, activation='relu'))
 
         model.add(Dense(self.action_size, activation='linear'))
         model.compile(loss='mse',
                       optimizer=Adam(lr=self.learning_rate))
+        model.summary()
+
         return model
 
-    def act(self, state):
+    def update_fixed_model(self):
+        self.fixed_model.set_weights(self.model.get_weights())
+
+    def act(self, state, log_mode):
         if np.random.rand() <= self.epsilon:
             return random.randrange(self.action_size)
         act_values = self.model.predict(state)
-        return np.argmax(act_values[0])  # returns action
+        if log_mode==True:
+            with open(self.act_log_path, "a") as act_log_file:
+                act_log_file.write("actions: {} best_action: {} \n"
+                           .format(act_values, np.argmax(act_values[0])))
+
+        return np.argmax(act_values[0])  # returns action_index
+
 
     def load(self, name):
         self.model.load_weights(name)
@@ -68,42 +85,61 @@ class DQNAgent:
     def save(self, name):
         self.model.save_weights(name)
 
-    def remember(self, state, action, reward, next_state, done):
-        network_current = np.copy(self.frame_sequence.sequence.reshape \
-            (1, self.state_size[0], self.state_size[1], self.lastk))
+    def remember(self, state, action_index, reward, done):
+        network_current = np.copy(self.frame_sequence.sequence)
 
         self.frame_sequence.add_frame(state)
 
-        network_next = np.copy(self.frame_sequence.sequence.reshape \
-            (1, self.state_size[0], self.state_size[1], self.lastk))
+        network_next = np.copy(self.frame_sequence.sequence)
 
-        self.memory.append((network_current, action, reward, network_next, done))
+        self.memory.append((network_current, action_index, reward, network_next, done))
 
     def update(self):
         network_current, action, reward, network_next, done = self.memory[0]
+        network_current = network_current.reshape(1, 80, 80, 4)
+        network_next = network_next.reshape(1, 80, 80, 4)
+
         target = reward
         if not done:
             target = (reward + self.gamma *
                       np.amax(self.model.predict(network_next)[0]))
         target_f = self.model.predict(network_current)
+        tmp = target_f.copy()
         target_f[0][action] = target
         self.model.fit(network_current, target_f, epochs=1, verbose=0)
+        new_predict = self.model.predict(network_current)
+        print('cao')
 
-    def replay(self):
+    def replay(self, target_mode):
         minibatch = random.sample(self.memory, self.batch_size)
-        for network_current, action, reward, network_next, done in minibatch:
-            #data = np.zeros((80, 80, 3), dtype=np.uint8)
-            #data[:,:,0] = network_current[0,:, :, 2]
-            #data[:,:,1] = network_current[0,:, :, 2]
-            #img = Image.fromarray(data, 'RGB')
-            #img.show()
-            target = reward
+
+        network_current_mini_batch = [mb[0] for mb in minibatch]
+        network_current_mini_batch = np.asarray(network_current_mini_batch)
+
+        network_next_mini_batch = [mb[3] for mb in minibatch]
+        network_next_mini_batch = np.asarray(network_next_mini_batch)
+
+        current_predicted_actions = self.model.predict(network_current_mini_batch)
+        if target_mode == True:
+            next_predicted_actions = self.fixed_model.predict(network_next_mini_batch)
+        else:
+            next_predicted_actions = self.model.predict(network_next_mini_batch)
+
+        cnt = 0
+        target_mini_batch = []
+        for mb in minibatch:
+            action_index = mb[1]
+            one_reward = mb[2]
+            done = mb[4]
+            target = one_reward
             if not done:
-                target = (reward + self.gamma *
-                          np.amax(self.model.predict(network_next)[0]))
-            target_f = self.model.predict(network_current)
-            target_f[0][action] = target
-            self.model.fit(network_current, target_f, epochs=1, verbose=0)
+                target = one_reward + self.gamma * np.amax(next_predicted_actions[cnt])
+            current_predicted_actions[cnt][action_index] = target
+
+            cnt += 1
+
+        target_mini_batch = np.asarray(current_predicted_actions)
+        self.model.fit(network_current_mini_batch, target_mini_batch, epochs=1, verbose=0)
 
 
 def main():
@@ -113,9 +149,10 @@ def main():
     preprocessor = Preprocessor(observation_size)
 
     state_size = Preprocessor.preprocessed_observation_size
-    action_size = int(env.action_space.n / 2)
-
+    action_size = 3
+    log_actions_freq = 400
     agent = DQNAgent(state_size, action_size)
+    target_mode = False
 
     for e in range(agent.episodes):
         observation = env.reset()
@@ -123,6 +160,10 @@ def main():
         episode_len = 0
         reward_sum = 0
 
+        if agent.target_core_mode == True:
+            if(e > 1):
+                agent.update_fixed_model()
+                target_mode = True
 
         #init sequence with repeated first frame
         for i in range(agent.lastk):
@@ -130,18 +171,20 @@ def main():
 
         #one episode
         while True:
-            episode_len+=1
             env.render()
 
+            #Take one action
             network_input = agent.frame_sequence.sequence.reshape(1, state_size[0], state_size[1], agent.lastk)
-            action = agent.act(network_input)
-            en_action = action
-            if action == 1: en_action = 3
+
+            action_index = agent.act(network_input, episode_len % log_actions_freq * (1 - agent.epsilon) == 0)
+
+            #Step into environment
+            en_action = action_index
+            if action_index == 1: en_action = 3
             next_observation, reward, done, _ = env.step(en_action)
             next_state = preprocessor.preprocess_observation(next_observation)
 
-
-            agent.remember(state,action,reward, next_state, done)
+            agent.remember(state, action_index, reward, done)
 
             state = next_state
 
@@ -167,12 +210,11 @@ def main():
             if e != 0 or episode_len > agent.pass_frames:
                 if agent.exp_replay:
                     if len(agent.memory) > agent.batch_size:
-                        agent.replay()
+                        agent.replay(target_mode)
                 else:
                     agent.update()
 
-
-
+            episode_len += 1
 
 
 if __name__ == '__main__':

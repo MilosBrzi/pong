@@ -32,7 +32,7 @@ class DQNAgent:
             self.memory = deque(maxlen=4)
         else: self.memory = deque(maxlen=64)
 
-        self.trained_model_path = "trained_models/DQN_first_model_conv2d_32_64_64"
+        self.trained_model_path = "trained_models/DQN_final_model_e_3.0"
         self.model_path = "models/DQN_model_e_"
         self.save_model_freq = 1
         self.log_path = "logs/dqn_log.txt"
@@ -48,7 +48,7 @@ class DQNAgent:
         model.add(Conv2D(filters=32, kernel_size=(4,4), strides = 2, activation='relu'))
         model.add(Conv2D(filters=32, kernel_size=(3,3), strides = 1, activation='relu'))
         model.add(Flatten())
-        model.add(Dense(256, activation='relu'))
+        model.add(Dense(512, activation='relu'))
 
         model.add(Dense(self.action_size, activation='linear'))
         model.compile(loss='mse',
@@ -67,7 +67,7 @@ class DQNAgent:
     def save(self, name):
         self.model.save_weights(name)
 
-    def remember(self, state, action, reward, next_state, done):
+    def remember(self, state, action, reward, done):
         network_current = np.copy(self.frame_sequence.sequence.reshape \
             (1, self.state_size[0], self.state_size[1], self.lastk))
 
@@ -112,7 +112,7 @@ def main():
     preprocessor = Preprocessor(observation_size)
 
     state_size = Preprocessor.preprocessed_observation_size
-    action_size = int(env.action_space.n / 2)
+    action_size = 3
 
     agent = DQNAgent(state_size, action_size)
     agent.load()
@@ -135,10 +135,13 @@ def main():
 
             network_input = agent.frame_sequence.sequence.reshape(1, state_size[0], state_size[1], agent.lastk)
             action = agent.act(network_input)
+
             en_action = action
             if action == 1: en_action = 3
             next_observation, reward, done, _ = env.step(en_action)
             next_state = preprocessor.preprocess_observation(next_observation)
+
+            agent.remember(state, action, reward, done)
 
             state = next_state
 
